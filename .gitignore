@@ -1,0 +1,50 @@
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.log
+
+# Test/coverage
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# IDE/Editor
+.vscode/
+.idea/
+
+# DB/Local
+*.sqlite3
+*.db
+
+# Node/Vite
+node_modules/
+dist/
+build/
+.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+*.local
+
+# 민감/실험 데이터
+myapi/responses/
+myapi/frontend/static/
+
+# 기타
+*.bak
+*.swp
+*.tmp
+*.zip
+*.tar
+*.tar.gz
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log* 

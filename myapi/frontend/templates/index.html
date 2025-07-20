@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>BatchVis + 실험 시작</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #F0F7FB;
+      font-family: 'Roboto', sans-serif;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: row;
+      width: 96%;
+      padding: 32px;
+    }
+
+    .left-panel {
+      display: flex;
+      flex-direction: column;
+      width: 30%;
+      margin-right: 24px;
+    }
+
+    .header {
+      margin-bottom: 16px;
+    }
+
+    .title {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 36px;
+      font-weight: 700;
+      color: #3D2D4C;
+      margin: 0;
+    }
+
+    .underline {
+      border: none;
+      height: 1px;
+      background-color: #B7BCC9;
+      margin-top: 6px;
+    }
+
+    .sidebar {
+      background-color: #ffffff;
+      border-radius: 4px;
+      box-shadow: 0 0 11px rgba(128, 139, 157, 0.15);
+      padding: 24px;
+      font-size: 16px;
+      line-height: 1.6;
+      height: 794px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .display-area {
+      flex: 1;
+      overflow-y: auto;
+      margin-bottom: 16px;
+      white-space: pre-line;
+    }
+
+    .input-box {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+
+    .input-box textarea {
+      flex: 1;
+      height: 48px;
+      padding: 10px;
+      font-size: 16px;
+      resize: none;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+
+    .input-box button {
+      background-color: #8E12D5;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .main-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .question-box label {
+      font-weight: bold;
+    }
+
+    .question-box select {
+      width: 100%;
+      height: 40px;
+      font-size: 16px;
+      margin-top: 8px;
+    }
+
+    .response-box {
+      background-color: #fff;
+      border-radius: 4px;
+      padding: 16px;
+      box-shadow: 0 0 11px rgba(128, 139, 157, 0.15);
+      position: relative;
+    }
+
+    .response-box button {
+      position: absolute;
+      bottom: 12px;
+      right: 12px;
+      background-color: #C5C0CA;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    /* 실험 시작 섹션 스타일 */
+    .experiment-section {
+      background-color: #ffffff;
+      margin-top: 40px;
+      padding: 24px;
+      border-radius: 6px;
+      box-shadow: 0 0 11px rgba(128, 139, 157, 0.15);
+    }
+
+    .experiment-section h2 {
+      font-size: 24px;
+      margin-bottom: 16px;
+      color: #3D2D4C;
+    }
+
+    .experiment-section label {
+      display: block;
+      margin-top: 12px;
+      font-weight: bold;
+    }
+
+    .experiment-section input {
+      width: 100%;
+      height: 36px;
+      font-size: 16px;
+      margin-top: 6px;
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    .experiment-section button {
+      margin-top: 20px;
+      background-color: #8E12D5;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    #result {
+      margin-top: 20px;
+    }
+    
+    .instruction-box {
+        border: none;
+        padding: 15px;
+        margin: 10px 0;
+        font-family: monospace;
+        font-size: 14px;
+        white-space: pre-wrap;
+        line-height: 1.6;
+    }
+    .pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: 20px 0;
+        gap: 10px;
+    }
+    .pagination button {
+        padding: 8px 12px;
+        border: 1px solid #ccc;
+        background: white;
+        cursor: pointer;
+    }
+    .pagination button:disabled {
+        background: #f0f0f0;
+        cursor: not-allowed;
+    }
+    .pagination .current {
+        background: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+    .loading {
+        color: #666;
+        font-style: italic;
+    }
+  </style>
+  <script>
+    let experimentNum = null;
+    let experimentActive = false;
+    let currentInstructions = [];
+    let currentAnswers = [];  // 답변 데이터 추가
+    let currentPage = 0;
+    let instructionsPerPage = 1;
+    let currentInput = '';  // 현재 입력값 저장
+
+    async function startExperiment() {
+        try {
+            const res = await fetch('/start_experiment', { method: 'POST' });
+            const data = await res.json();
+            experimentNum = data.experiment_num;
+            experimentActive = true;
+            
+            // experiment_num 입력 필드에 실험 번호 표시
+            document.getElementById('experiment_num').value = experimentNum;
+            document.getElementById('experiment_num').readOnly = true; // 수정 불가능하게 설정
+            
+            const display = document.getElementById('displayArea');
+            display.innerHTML = `<div>실험을 시작했습니다. 이제 환자 정보를 입력하세요.</div>`;
+            
+            document.getElementById('result').innerText = '실험을 시작했습니다. 이제 환자 정보를 입력하세요.';
+        } catch (error) {
+            document.getElementById('result').innerText = `오류 발생: ${error.message}`;
+        }
+    }
+
+    function endExperiment() {
+      if (!experimentActive) {
+        alert('실험을 먼저 시작하세요.');
+        return;
+      }
+      experimentActive = false;
+      document.getElementById('result').innerText = '실험 완료';
+    }
+
+    async function submitText() {
+        const input = document.getElementById('inputText').value;
+        const display = document.getElementById('displayArea');
+        const loading = document.getElementById('loading');
+
+        if (!input) return;
+
+        // 입력값 저장
+        currentInput = input;
+
+        // 입력값을 display-area에 바로 보여줌
+        display.innerHTML = `<div style='margin-bottom:10px;'><strong>입력:</strong> ${input}</div>`;
+        loading.style.display = 'block';
+        loading.innerText = 'Instruction 생성 중...';
+
+        if (experimentActive) {
+            try {
+                // 1단계: Instruction 생성
+                const instructionRes = await fetch('/generate_instructions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_input: input })
+                });
+                const instructionData = await instructionRes.json();
+                
+                // 생성된 instruction들을 저장하고 첫 번째 페이지 표시
+                currentInstructions = instructionData.instructions || [];
+                currentPage = 0;
+                instructionsPerPage = 1;
+                
+                if (currentInstructions.length > 0) {
+                    displayInstruction(currentPage);
+                    showPagination();
+                    loading.innerText = `Instruction 생성 완료! (${currentInstructions.length}개 조합)`;
+                    
+                    // 2단계: 질문-답변 처리
+                    setTimeout(async () => {
+                        loading.innerText = '질문-답변 처리 중...';
+                        
+                        const qaRes = await fetch('/process_qa', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                experiment_num: experimentNum,
+                                instructions: currentInstructions,
+                                user_input: input
+                            })
+                        });
+                        const qaData = await qaRes.json();
+                        
+                        // 답변 데이터 저장
+                        currentAnswers = qaData.prompts || [];
+                        
+                        // 디버깅: 답변 데이터 확인
+                        console.log('답변 데이터:', currentAnswers);
+                        console.log('답변 개수:', currentAnswers.length);
+                        
+                        // 첫 번째 페이지 다시 표시 (답변 포함)
+                        displayInstruction(currentPage);
+                        // 답변 생성 후 첫 질문에 대한 답변 자동 표시
+                        if (currentAnswers.length > 0 && currentAnswers[0].qa && currentAnswers[0].qa.length > 0) {
+                          document.getElementById('question').selectedIndex = 1;
+                          displayResponsesByQuestion(0);
+                        }
+                        
+                        loading.innerText = `처리 완료! (${qaData.prompts_count}개 조합, ${qaData.questions_count}개 질문)`;
+                        document.getElementById('result').innerText = `실험 완료! (${qaData.prompts_count}개 조합, ${qaData.questions_count}개 질문)`;
+                        
+                        // 3초 후 로딩 메시지 숨기기
+                        setTimeout(() => {
+                            loading.style.display = 'none';
+                        }, 3000);
+                    }, 1000);
+                } else {
+                    loading.innerText = 'Instruction 생성 실패';
+                }
+                
+            } catch (error) {
+                document.getElementById('result').innerText = `오류 발생: ${error.message}`;
+                loading.innerText = '오류 발생';
+            }
+        }
+
+        document.getElementById('inputText').value = '';
+    }
+
+    function displayInstruction(pageIndex) {
+        const display = document.getElementById('displayArea');
+        
+        if (currentInstructions.length === 0) return;
+        
+        const instruction = currentInstructions[pageIndex];
+        // detail 정보 문자열 생성
+        let detailStr = '';
+        if (instruction.type === 'personality') {
+            detailStr = Object.entries(instruction.detail).map(([k,v]) => `${k}: ${v}`).join(', ');
+        } else if (instruction.type === 'character') {
+            detailStr = Object.entries(instruction.detail).map(([k,v]) => `${k}: ${v}`).join(', ');
+        } else if (instruction.type === 'personality+character') {
+            const t = instruction.detail.temperament;
+            const c = instruction.detail.character;
+            detailStr = `[Temperament] ` + Object.entries(t).map(([k,v]) => `${k}: ${v}`).join(', ') + ' | [Character] ' + Object.entries(c).map(([k,v]) => `${k}: ${v}`).join(', ');
+        }
+        
+        display.innerHTML = `
+            <div style='margin-bottom:10px;'><strong>입력:</strong> ${currentInput}</div>
+            <div style='margin-bottom:10px;'><strong>조합:</strong> ${detailStr}</div>
+            <div class="instruction-box">
+                <strong>[${instruction.type.toUpperCase()}]</strong>
+                ${instruction.prompt}
+            </div>
+        `;
+        
+        updatePagination();
+    }
+
+    async function displayResponsesByQuestion(selectedQuestionIdx) {
+        const mainPanel = document.querySelector('.main-panel');
+        // 기존 response-box들 제거
+        const existingResponses = mainPanel.querySelectorAll('.response-box');
+        existingResponses.forEach(box => box.remove());
+
+        // 질문 텍스트 가져오기
+        const select = document.getElementById('question');
+        const questionText = select.options[selectedQuestionIdx + 1]?.textContent;
+        if (!questionText) return;
+
+        // 답변 대기중 UI 미리 표시
+        currentInstructions.forEach((inst, idx) => {
+            let detailStr = '';
+            if (inst.type === 'personality') {
+                detailStr = Object.entries(inst.detail).map(([k,v]) => `${k}: ${v}`).join(', ');
+            } else if (inst.type === 'character') {
+                detailStr = Object.entries(inst.detail).map(([k,v]) => `${k}: ${v}`).join(', ');
+            } else if (inst.type === 'personality+character') {
+                const t = inst.detail.temperament;
+                const c = inst.detail.character;
+                detailStr = `[Temperament] ` + Object.entries(t).map(([k,v]) => `${k}: ${v}`).join(', ') + ' | [Character] ' + Object.entries(c).map(([k,v]) => `${k}: ${v}`).join(', ');
+            }
+            const responseBox = document.createElement('div');
+            responseBox.className = 'response-box';
+            responseBox.innerHTML = `
+                <div style="font-size:13px; color:#888; margin-bottom:6px;">${inst.type.toUpperCase()} | ${detailStr}</div>
+                <p style="color:#aaa;">답변 대기중...</p>
+            `;
+            mainPanel.appendChild(responseBox);
+        });
+
+        // 백엔드에 batch 요청
+        const res = await fetch('/process_qa_one_question', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                experiment_num: experimentNum,
+                instructions: currentInstructions,
+                user_input: currentInput,
+                question_text: questionText
+            })
+        });
+        const data = await res.json();
+        // 답변 오면 UI 갱신
+        const boxes = mainPanel.querySelectorAll('.response-box');
+        data.answers.forEach((ans, idx) => {
+            if (!boxes[idx]) return;
+            let detailStr = '';
+            if (ans.type === 'personality') {
+                detailStr = Object.entries(ans.detail).map(([k,v]) => `${k}: ${v}`).join(', ');
+            } else if (ans.type === 'character') {
+                detailStr = Object.entries(ans.detail).map(([k,v]) => `${k}: ${v}`).join(', ');
+            } else if (ans.type === 'personality+character') {
+                const t = ans.detail.temperament;
+                const c = ans.detail.character;
+                detailStr = `[Temperament] ` + Object.entries(t).map(([k,v]) => `${k}: ${v}`).join(', ') + ' | [Character] ' + Object.entries(c).map(([k,v]) => `${k}: ${v}`).join(', ');
+            }
+            boxes[idx].innerHTML = `
+                <div style="font-size:13px; color:#888; margin-bottom:6px;">${ans.type.toUpperCase()} | ${detailStr}</div>
+                <p>${ans.answer}</p>
+                <button>선택</button>
+            `;
+        });
+    }
+
+    function showPagination() {
+        const pagination = document.getElementById('pagination');
+        pagination.style.display = 'flex';
+        updatePagination();
+    }
+
+    function updatePagination() {
+        const pageInfo = document.getElementById('pageInfo');
+        const totalPages = currentInstructions.length;
+        pageInfo.innerText = `${currentPage + 1} / ${totalPages}`;
+        
+        // 버튼 활성화/비활성화
+        const prevBtn = pagination.querySelector('button:first-child');
+        const nextBtn = pagination.querySelector('button:last-child');
+        
+        prevBtn.disabled = currentPage === 0;
+        nextBtn.disabled = currentPage === totalPages - 1;
+    }
+
+    function prevPage() {
+        if (currentPage > 0) {
+            currentPage--;
+            displayInstruction(currentPage);
+            displayResponses(currentPage);
+        }
+    }
+
+    function nextPage() {
+        if (currentPage < currentInstructions.length - 1) {
+            currentPage++;
+            displayInstruction(currentPage);
+            displayResponses(currentPage);
+        }
+    }
+
+    async function populateQuestions() {
+      const res = await fetch('/static/questions.json');
+      if (res.ok) {
+        const questions = await res.json();
+        const select = document.getElementById('question');
+        select.innerHTML = '<option>문항을 선택하세요</option>';
+        questions.forEach((q, idx) => {
+          const opt = document.createElement('option');
+          opt.value = idx + 1;
+          opt.textContent = q.text;
+          select.appendChild(opt);
+        });
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('start-btn').onclick = startExperiment;
+      document.getElementById('end-btn').onclick = endExperiment;
+      populateQuestions();
+      
+      // 질문 선택 이벤트
+      document.getElementById('question').addEventListener('change', function() {
+        const idx = this.selectedIndex - 1;
+        if (idx >= 0) {
+          displayResponsesByQuestion(idx);
+        }
+      });
+    });
+  </script>
+</head>
+<body>
+  <div class="container">
+    <!-- 왼쪽 패널 -->
+    <div class="left-panel">
+      <div class="header">
+        <h1 class="title">BatchVis</h1>
+        <hr class="underline" />
+      </div>
+      <div class="sidebar">
+        <div class="display-area" id="displayArea">
+            <div>실험을 시작하려면 "실험 시작" 버튼을 클릭하세요.</div>
+        </div>
+        
+        <div class="pagination" id="pagination" style="display: none;">
+            <button onclick="prevPage()">&lt;</button>
+            <span id="pageInfo">1 / 1</span>
+            <button onclick="nextPage()">&gt;</button>
+        </div>
+        
+        <div id="loading" class="loading" style="display: none;">처리 중...</div>
+        <div id="result" class="result"></div>
+        <div class="input-box">
+          <textarea id="inputText" placeholder="여기에 프롬프트를 입력하세요." rows="3"></textarea>
+          <button onclick="submitText()">전송</button>
+        </div>
+    </div>
+     <div class="experiment-section">
+        <h2>실험 시작</h2>
+        <form id="experiment-form" onsubmit="return false;">
+          <label for="experiment_num">실험 번호:</label>
+          <input type="text" id="experiment_num" name="experiment_num" required />
+          <button type="button" id="start-btn">실험 시작</button>
+          <button type="button" id="end-btn">실험 완료</button>
+        </form>
+        <div id="result"></div>
+      </div>
+    </div>
+
+    <!-- 오른쪽 패널 -->
+    <div class="main-panel">
+      <div class="question-box">
+        <label for="question">질문 선택:</label>
+        <select id="question">
+          <!-- 질문 목록은 JS에서 동적으로 로드 -->
+        </select>
+      </div>
+
+      <!-- response-box들은 동적으로 생성됨 -->
+    </div>
+  </div>
+</body>
+</html>
