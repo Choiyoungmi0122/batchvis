@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 import glob
 import pytz
 from tempfile import NamedTemporaryFile
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app = FastAPI()
 
@@ -191,26 +190,134 @@ async def generate_instructions(data: dict = Body(...)):
     with open(personality_file, "r", encoding="utf-8") as f:
         personality_data = json.load(f)
     
-    # 2. Temperament+Character 조합만 virtual_patient_prompt 생성
+    # 2. 조합별 virtual_patient_prompt 생성
     instructions = []
-    temperament = [t for t in personality_data if t["type"] == "temperament"]
-    character = [t for t in personality_data if t["type"] == "character"]
-    for t1 in temperament:
-        for t2 in character:
-            d1 = t1["detail"]
-            d2 = t2["detail"]
+    
+    for trait in personality_data:
+        type_name = "personality" if trait["type"] == "temperament" else "character"
+        detail = trait["detail"]
+        
+        # 챗봇 instruction 형태로 가상환자 프롬프트 생성
+        if type_name == "personality":
+            # user_input 파싱
             input_parts = user_input.split(',')
             name = input_parts[0].strip() if len(input_parts) > 0 else ''
             age = input_parts[1].replace('년생','').strip() if len(input_parts) > 1 else ''
             gender = input_parts[2].strip() if len(input_parts) > 2 else ''
             symptom = input_parts[3].strip() if len(input_parts) > 3 else ''
-            virtual_prompt = f"""당신은 다음 조건을 가진 가상환자입니다. 이 역할을 완전히 수행해주세요.\n\n환자 정보:\n- 이름: {name}\n- 나이: {age}\n- 성별: {gender}\n- 주소증(주 증상): {symptom}\n- TCI 성향:\n  - 기질(Temperament): \n    - 자극추구: {d1['자극추구']}\n    - 위험회피: {d1['위험회피']}\n    - 자율성: {d1['자율성']}\n  - 성격(Character): \n    - 자율성: {d2['자율성']}\n    - 연대감: {d2['연대감']}\n    - 자기초월: {d2['자기초월']}\n    \n역할 수행 지침\n1. 위 성향 수치를 고려하여 말투, 감정 표현, 행동 양식, 인지방식이 모두 해당 성향을 반영해야 합니다.\n2. 모든 응답은 1인칭 시점에서 자연스럽고 일관되게 작성되어야 하며, TCI 특성이 언어와 감정 표현에 스며들어야 합니다.\n3. 환자는 실제 인간처럼 사고하고 느끼며, 자신이 경험하는 증상과 감정을 솔직하게 묘사해야 합니다.\n4. 임상 상담, 진료 인터뷰, 정신과적 면담 등에서 활용 가능하도록 신뢰도 높은 시뮬레이션을 제공하세요.\n\n이제 당신은 위 환자입니다. 질문에 응답하세요."""
+            
+            virtual_prompt = f"""당신은 다음 조건을 가진 가상환자입니다. 이 역할을 완전히 수행해주세요.
+
+환자 정보:
+- 이름: {name}
+- 나이: {age}
+- 성별: {gender}
+- 주소증(주 증상): {symptom}
+- TCI 성향:
+  - 기질(Temperament): 
+    - 자극추구: {detail['자극추구']}
+    - 위험회피: {detail['위험회피']}
+    - 자율성: {detail['자율성']}
+  - 성격(Character): 
+    - 자율성: [-]
+    - 연대감: [-]
+    - 자기초월: [-]
+
+역할 수행 지침
+1. 위 성향 수치를 고려하여 말투, 감정 표현, 행동 양식, 인지방식이 모두 해당 성향을 반영해야 합니다.
+2. 모든 응답은 1인칭 시점에서 자연스럽고 일관되게 작성되어야 하며, TCI 특성이 언어와 감정 표현에 스며들어야 합니다.
+3. 환자는 실제 인간처럼 사고하고 느끼며, 자신이 경험하는 증상과 감정을 솔직하게 묘사해야 합니다.
+4. 임상 상담, 진료 인터뷰, 정신과적 면담 등에서 활용 가능하도록 신뢰도 높은 시뮬레이션을 제공하세요.
+
+이제 당신은 위 환자입니다. 질문에 응답하세요."""
+        else:  # character
+            # user_input 파싱
+            input_parts = user_input.split(',')
+            name = input_parts[0].strip() if len(input_parts) > 0 else ''
+            age = input_parts[1].replace('년생','').strip() if len(input_parts) > 1 else ''
+            gender = input_parts[2].strip() if len(input_parts) > 2 else ''
+            symptom = input_parts[3].strip() if len(input_parts) > 3 else ''
+            
+            virtual_prompt = f"""당신은 다음 조건을 가진 가상환자입니다. 이 역할을 완전히 수행해주세요.
+
+환자 정보:
+- 이름: {name}
+- 나이: {age}
+- 성별: {gender}
+- 주소증(주 증상): {symptom}
+- TCI 성향:
+  - 기질(Temperament): 
+    - 자극추구: [-]
+    - 위험회피: [-]
+    - 자율성: [-]
+  - 성격(Character): 
+    - 자율성: {detail['자율성']}
+    - 연대감: {detail['연대감']}
+    - 자기초월: {detail['자기초월']}
+
+역할 수행 지침
+1. 위 성향 수치를 고려하여 말투, 감정 표현, 행동 양식, 인지방식이 모두 해당 성향을 반영해야 합니다.
+2. 모든 응답은 1인칭 시점에서 자연스럽고 일관되게 작성되어야 하며, TCI 특성이 언어와 감정 표현에 스며들어야 합니다.
+3. 환자는 실제 인간처럼 사고하고 느끼며, 자신이 경험하는 증상과 감정을 솔직하게 묘사해야 합니다.
+4. 임상 상담, 진료 인터뷰, 정신과적 면담 등에서 활용 가능하도록 신뢰도 높은 시뮬레이션을 제공하세요.
+
+이제 당신은 위 환자입니다. 질문에 응답하세요."""
+        
+        instructions.append({
+            "type": type_name,
+            "prompt": virtual_prompt,
+            "detail": detail,
+            "personality": trait.get("personality", "")
+        })
+    
+    # 3. personality+character 조합 생성
+    temperament = [t for t in personality_data if t["type"] == "temperament"]
+    character = [t for t in personality_data if t["type"] == "character"]
+    
+    for t1 in temperament:
+        for t2 in character:
+            d1 = t1["detail"]
+            d2 = t2["detail"]
+            
+            # user_input 파싱
+            input_parts = user_input.split(',')
+            name = input_parts[0].strip() if len(input_parts) > 0 else ''
+            age = input_parts[1].replace('년생','').strip() if len(input_parts) > 1 else ''
+            gender = input_parts[2].strip() if len(input_parts) > 2 else ''
+            symptom = input_parts[3].strip() if len(input_parts) > 3 else ''
+            
+            virtual_prompt = f"""당신은 다음 조건을 가진 가상환자입니다. 이 역할을 완전히 수행해주세요.
+
+환자 정보:
+- 이름: {name}
+- 나이: {age}
+- 성별: {gender}
+- 주소증(주 증상): {symptom}
+- TCI 성향:
+  - 기질(Temperament): 
+    - 자극추구: {d1['자극추구']}
+    - 위험회피: {d1['위험회피']}
+    - 자율성: {d1['자율성']}
+  - 성격(Character): 
+    - 자율성: {d2['자율성']}
+    - 연대감: {d2['연대감']}
+    - 자기초월: {d2['자기초월']}
+    
+역할 수행 지침
+1. 위 성향 수치를 고려하여 말투, 감정 표현, 행동 양식, 인지방식이 모두 해당 성향을 반영해야 합니다.
+2. 모든 응답은 1인칭 시점에서 자연스럽고 일관되게 작성되어야 하며, TCI 특성이 언어와 감정 표현에 스며들어야 합니다.
+3. 환자는 실제 인간처럼 사고하고 느끼며, 자신이 경험하는 증상과 감정을 솔직하게 묘사해야 합니다.
+4. 임상 상담, 진료 인터뷰, 정신과적 면담 등에서 활용 가능하도록 신뢰도 높은 시뮬레이션을 제공하세요.
+
+이제 당신은 위 환자입니다. 질문에 응답하세요."""
+        
             instructions.append({
                 "type": "personality+character",
                 "prompt": virtual_prompt,
                 "detail": {"temperament": d1, "character": d2},
                 "personality": f"{t1.get('personality','')}, {t2.get('personality','')}"
             })
+    
     return {
         "message": "Instruction 생성 완료",
         "instructions": instructions,
@@ -220,7 +327,7 @@ async def generate_instructions(data: dict = Body(...)):
 @app.post("/process_qa")
 async def process_qa(data: dict = Body(...)):
     """
-    생성된 instruction들에 대해 질문-답변 처리 (병렬화)
+    생성된 instruction들에 대해 질문-답변 처리
     data = {
         "experiment_num": "20250720_123456",
         "instructions": [...],
@@ -236,28 +343,8 @@ async def process_qa(data: dict = Body(...)):
     with open(questions_file, "r", encoding="utf-8") as f:
         questions = json.load(f)
     
+    # 각 instruction별로 질문-답변 처리
     prompts = []
-
-    def get_answer(instruction, q):
-        qa_prompt = f"{instruction['prompt']}\n\n질문: {q['text']}"
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": "당신은 가상환자 역할을 수행하는 AI입니다."},
-                    {"role": "user", "content": qa_prompt}
-                ],
-                max_tokens=500
-            )
-            answer = response.choices[0].message.content
-        except Exception as e:
-            answer = f"Error: {str(e)}"
-        return {
-            "question": q["text"],
-            "answer": answer
-        }
-
-    # 병렬 처리: instruction별로, 각 질문에 대해 병렬 호출
     for instruction in instructions:
         prompt_data = {
             "type": instruction["type"],
@@ -267,34 +354,52 @@ async def process_qa(data: dict = Body(...)):
             "detail": instruction.get("detail", {}),
             "personality": instruction.get("personality", "")
         }
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            # 질문별로 병렬 실행
-            futures = [executor.submit(get_answer, instruction, q) for q in questions]
-            for future in as_completed(futures):
-                prompt_data["qa"].append(future.result())
-        # 질문 순서 보장
-        prompt_data["qa"].sort(key=lambda x: [q["text"] for q in questions].index(x["question"]))
+        
+        for q in questions:
+            qa_prompt = f"{instruction['prompt']}\n\n질문: {q['text']}"
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": "당신은 가상환자 역할을 수행하는 AI입니다."},
+                        {"role": "user", "content": qa_prompt}
+                    ],
+                    max_tokens=500
+                )
+                answer = response.choices[0].message.content
+            except Exception as e:
+                answer = f"Error: {str(e)}"
+            
+            prompt_data["qa"].append({
+                "question": q["text"],
+                "answer": answer
+            })
+        
         prompts.append(prompt_data)
-
-    # experiment_번호.json에 history로 저장 (이하 기존과 동일)
+    
+    # experiment_번호.json에 history로 저장
     filename = os.path.join(RESULTS_DIR, f"experiment_{experiment_num}.json")
+    
     if os.path.exists(filename):
         with open(filename, "r", encoding="utf-8") as f:
             existing_data = json.load(f)
             history = existing_data.get("history", [])
     else:
         history = []
+    
     new_entry = {
         "timestamp": datetime.now().isoformat(),
         "user_input": user_input,
         "prompts": prompts
     }
     history.append(new_entry)
+    
     with open(filename, "w", encoding="utf-8") as f:
         json.dump({
             "experiment_num": experiment_num,
             "history": history
         }, f, ensure_ascii=False, indent=2)
+    
     return {
         "message": "질문-답변 처리 완료",
         "experiment_num": experiment_num,
@@ -377,10 +482,27 @@ async def process_qa_batch(data: dict = Body(...)):
     with open(questions_file, "r", encoding="utf-8") as f:
         questions = json.load(f)
 
-    # 3. Temperament+Character 조합만 virtual_patient_prompt 생성
+    # 3. 가상환자 프롬프트 생성 함수 (main.py와 동일)
+    def make_virtual_prompt(trait, user_input):
+        type_name = "personality" if trait["type"] == "temperament" else "character"
+        detail = trait["detail"]
+        input_parts = user_input.split(',')
+        name = input_parts[0].strip() if len(input_parts) > 0 else ''
+        age = input_parts[1].replace('년생','').strip() if len(input_parts) > 1 else ''
+        gender = input_parts[2].strip() if len(input_parts) > 2 else ''
+        symptom = input_parts[3].strip() if len(input_parts) > 3 else ''
+        if type_name == "personality":
+            return f"""당신은 다음 조건을 가진 가상환자입니다. 이 역할을 완전히 수행해주세요.\n\n환자 정보:\n- 이름: {name}\n- 나이: {age}\n- 성별: {gender}\n- 주소증(주 증상): {symptom}\n- TCI 성향:\n  - 기질(Temperament): \n    - 자극추구: {detail['자극추구']}\n    - 위험회피: {detail['위험회피']}\n    - 자율성: {detail['자율성']}\n  - 성격(Character): \n    - 자율성: [-]\n    - 연대감: [-]\n    - 자기초월: [-]\n\n역할 수행 지침\n1. 위 성향 수치를 고려하여 말투, 감정 표현, 행동 양식, 인지방식이 모두 해당 성향을 반영해야 합니다.\n2. 모든 응답은 1인칭 시점에서 자연스럽고 일관되게 작성되어야 하며, TCI 특성이 언어와 감정 표현에 스며들어야 합니다.\n3. 환자는 실제 인간처럼 사고하고 느끼며, 자신이 경험하는 증상과 감정을 솔직하게 묘사해야 합니다.\n4. 임상 상담, 진료 인터뷰, 정신과적 면담 등에서 활용 가능하도록 신뢰도 높은 시뮬레이션을 제공하세요.\n\n이제 당신은 위 환자입니다. 질문에 응답하세요."""
+        else:
+            return f"""당신은 다음 조건을 가진 가상환자입니다. 이 역할을 완전히 수행해주세요.\n\n환자 정보:\n- 이름: {name}\n- 나이: {age}\n- 성별: {gender}\n- 주소증(주 증상): {symptom}\n- TCI 성향:\n  - 기질(Temperament): \n    - 자극추구: [-]\n    - 위험회피: [-]\n    - 자율성: [-]\n  - 성격(Character): \n    - 자율성: {detail['자율성']}\n    - 연대감: {detail['연대감']}\n    - 자기초월: {detail['자기초월']}\n\n역할 수행 지침\n1. 위 성향 수치를 고려하여 말투, 감정 표현, 행동 양식, 인지방식이 모두 해당 성향을 반영해야 합니다.\n2. 모든 응답은 1인칭 시점에서 자연스럽고 일관되게 작성되어야 하며, TCI 특성이 언어와 감정 표현에 스며들어야 합니다.\n3. 환자는 실제 인간처럼 사고하고 느끼며, 자신이 경험하는 증상과 감정을 솔직하게 묘사해야 합니다.\n4. 임상 상담, 진료 인터뷰, 정신과적 면담 등에서 활용 가능하도록 신뢰도 높은 시뮬레이션을 제공하세요.\n\n이제 당신은 위 환자입니다. 질문에 응답하세요."""
+
+    # 4. personality+character 조합 생성
     temperament = [t for t in personality_data if t["type"] == "temperament"]
     character = [t for t in personality_data if t["type"] == "character"]
+
     instructions = []
+    for trait in personality_data:
+        instructions.append(make_virtual_prompt(trait, user_input))
     for t1 in temperament:
         for t2 in character:
             input_parts = user_input.split(',')
@@ -390,28 +512,9 @@ async def process_qa_batch(data: dict = Body(...)):
             symptom = input_parts[3].strip() if len(input_parts) > 3 else ''
             d1 = t1["detail"]
             d2 = t2["detail"]
-            instructions.append(f"""
-            당신은 다음 조건을 가진 가상환자입니다. 이 역할을 완전히 수행해주세요.\n\n
-            환자 정보:\n
-            - 이름: {name}\n
-            - 나이: {age}\n
-            - 성별: {gender}\n
-            - 주소증(주 증상): {symptom}\n
-            - TCI 성향:\n  
-            - 기질(Temperament): \n    
-            - 자극추구: {d1['자극추구']}\n    
-            - 위험회피: {d1['위험회피']}\n    
-            - 자율성: {d1['자율성']}\n  
-            - 성격(Character): \n    
-            - 자율성: {d2['자율성']}\n    
-            - 연대감: {d2['연대감']}\n    
-            - 자기초월: {d2['자기초월']}\n\n
-            역할 수행 지침\n1. 위 성향 수치를 고려하여 말투, 감정 표현, 행동 양식, 인지방식이 모두 해당 성향을 반영해야 합니다.\n
-            2. 모든 응답은 1인칭 시점에서 자연스럽고 일관되게 작성되어야 하며, TCI 특성이 언어와 감정 표현에 스며들어야 합니다.\n
-            3. 환자는 실제 인간처럼 사고하고 느끼며, 자신이 경험하는 증상과 감정을 솔직하게 묘사해야 합니다.\n
-            4. 임상 상담, 진료 인터뷰, 정신과적 면담 등에서 활용 가능하도록 신뢰도 높은 시뮬레이션을 제공하세요.\n\n
-            이제 당신은 위 환자입니다. 질문에 응답하세요.""")
-            
+            instructions.append(f"""당신은 다음 조건을 가진 가상환자입니다. 이 역할을 완전히 수행해주세요.\n\n환자 정보:\n- 이름: {name}\n- 나이: {age}\n- 성별: {gender}\n- 주소증(주 증상): {symptom}\n- TCI 성향:\n  - 기질(Temperament): \n    - 자극추구: {d1['자극추구']}\n    - 위험회피: {d1['위험회피']}\n    - 자율성: {d1['자율성']}\n  - 성격(Character): \n    - 자율성: {d2['자율성']}\n    - 연대감: {d2['연대감']}\n    - 자기초월: {d2['자기초월']}\n\n역할 수행 지침\n1. 위 성향 수치를 고려하여 말투, 감정 표현, 행동 양식, 인지방식이 모두 해당 성향을 반영해야 합니다.\n2. 모든 응답은 1인칭 시점에서 자연스럽고 일관되게 작성되어야 하며, TCI 특성이 언어와 감정 표현에 스며들어야 합니다.\n3. 환자는 실제 인간처럼 사고하고 느끼며, 자신이 경험하는 증상과 감정을 솔직하게 묘사해야 합니다.\n4. 임상 상담, 진료 인터뷰, 정신과적 면담 등에서 활용 가능하도록 신뢰도 높은 시뮬레이션을 제공하세요.\n\n이제 당신은 위 환자입니다. 질문에 응답하세요.""")
+
+    # 5. batchinput.jsonl 임시 파일 생성
     with NamedTemporaryFile("w+", delete=False, encoding="utf-8", suffix=".jsonl") as tmpfile:
         for prompt in instructions:
             for q in questions:
@@ -422,7 +525,8 @@ async def process_qa_batch(data: dict = Body(...)):
                 req = {"messages": messages, "model": "gpt-4o"}
                 tmpfile.write(json.dumps(req, ensure_ascii=False) + "\n")
         tmpfile_path = tmpfile.name
-    # 6. OpenAI Batch API 업로드 및 실행 (이하 동일)
+
+    # 6. OpenAI Batch API 업로드 및 실행
     batch_input_file = client.files.create(
         file=open(tmpfile_path, "rb"),
         purpose="batch"

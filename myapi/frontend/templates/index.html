@@ -454,7 +454,12 @@
         if (currentPage > 0) {
             currentPage--;
             displayInstruction(currentPage);
-            displayResponses(currentPage);
+            // 현재 선택된 질문 인덱스에 맞춰 답변 표시
+            const select = document.getElementById('question');
+            const idx = select.selectedIndex - 1;
+            if (idx >= 0) {
+                displayResponsesByQuestion(idx);
+            }
         }
     }
 
@@ -462,7 +467,12 @@
         if (currentPage < currentInstructions.length - 1) {
             currentPage++;
             displayInstruction(currentPage);
-            displayResponses(currentPage);
+            // 현재 선택된 질문 인덱스에 맞춰 답변 표시
+            const select = document.getElementById('question');
+            const idx = select.selectedIndex - 1;
+            if (idx >= 0) {
+                displayResponsesByQuestion(idx);
+            }
         }
     }
 
