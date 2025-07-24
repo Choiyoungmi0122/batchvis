@@ -46,6 +46,13 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 RESULTS_DIR = "responses"
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"error": f"Internal Server Error: {str(exc)}"}
+    )
+
 @app.get("/")
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
@@ -204,17 +211,41 @@ async def generate_instructions(data: dict = Body(...)):
             age = input_parts[1].replace('년생','').strip() if len(input_parts) > 1 else ''
             gender = input_parts[2].strip() if len(input_parts) > 2 else ''
             symptom = input_parts[3].strip() if len(input_parts) > 3 else ''
-            virtual_prompt = f"""당신은 다음 조건을 가진 가상환자입니다. 이 역할을 완전히 수행해주세요.\n\n환자 정보:\n- 이름: {name}\n- 나이: {age}\n- 성별: {gender}\n- 주소증(주 증상): {symptom}\n- TCI 성향:\n  - 기질(Temperament): \n    - 자극추구: {d1['자극추구']}\n    - 위험회피: {d1['위험회피']}\n    - 자율성: {d1['자율성']}\n  - 성격(Character): \n    - 자율성: {d2['자율성']}\n    - 연대감: {d2['연대감']}\n    - 자기초월: {d2['자기초월']}\n    \n역할 수행 지침\n1. 위 성향 수치를 고려하여 말투, 감정 표현, 행동 양식, 인지방식이 모두 해당 성향을 반영해야 합니다.\n2. 모든 응답은 1인칭 시점에서 자연스럽고 일관되게 작성되어야 하며, TCI 특성이 언어와 감정 표현에 스며들어야 합니다.\n3. 환자는 실제 인간처럼 사고하고 느끼며, 자신이 경험하는 증상과 감정을 솔직하게 묘사해야 합니다.\n4. 임상 상담, 진료 인터뷰, 정신과적 면담 등에서 활용 가능하도록 신뢰도 높은 시뮬레이션을 제공하세요.\n\n이제 당신은 위 환자입니다. 질문에 응답하세요."""
+            virtual_prompt = f"""당신은 다음 조건을 가진 가상환자입니다. 이 역할을 완전히 수행해주세요.\n\n
+            환자 정보:\n
+            - 이름: {name}\n
+            - 나이: {age}\n
+            - 성별: {gender}\n
+            - 주소증(주 증상): {symptom}\n
+            - TCI 성향:\n  
+            - 기질(Temperament): \n    
+            - 자극추구: {d1.get('자극추구','-')}\n    
+            - 위험회피: {d1.get('위험회피','-')}\n    
+            - 자율성: {d1.get('자율성','-')}\n    
+            - 사회적민감성: {d1.get('사회적민감성','-')}\n    
+            - 인내력: {d1.get('인내력','-')}\n  
+            - 성격(Character): \n    
+            - 자율성: {d2.get('자율성','-')}\n    
+            - 연대감: {d2.get('연대감','-')}\n    
+            - 자기초월: {d2.get('자기초월','-')}\n\n
+            역할 수행 지침
+            1. 아래 성향 수치를 바탕으로 말투, 감정 표현, 사고 방식, 비언어적 표현(예: 말끝 흐림, 한숨, 머뭇거림 등)이 자연스럽게 드러나야 합니다.
+            2. 모든 응답은 1인칭 시점에서 일관되게 작성되어야 하며, 말의 길이는 지나치게 길지 않도록 상황에 맞게 조절합니다.
+            3. 답변은 실제 인간처럼 감정을 느끼고 경험하는 듯한 방식으로 작성되며, TCI 성향이 응답 전반에 녹아 있어야 합니다.
+            4. 임상 면담, 상담, 정신건강 평가에 활용 가능한 신뢰도 높은 시뮬레이션을 제공합니다.
+
+            이제 당신은 위 환자입니다. 질문에 응답하세요."""
             instructions.append({
                 "type": "personality+character",
                 "prompt": virtual_prompt,
                 "detail": {"temperament": d1, "character": d2},
                 "personality": f"{t1.get('personality','')}, {t2.get('personality','')}"
             })
+    total_count = len(temperament) * len(character)
     return {
         "message": "Instruction 생성 완료",
         "instructions": instructions,
-        "total_count": len(instructions)
+        "total_count": total_count
     }
 
 @app.post("/process_qa")
@@ -319,25 +350,23 @@ async def process_qa_one_question(data: dict = Body(...)):
     user_input = data.get("user_input")
     question_text = data.get("question_text")
 
-    # 전체 조합에 대해 해당 질문만 batch로 요청
-    messages_list = [
-        [
+    # 각 조합별로 하나씩 OpenAI API 호출 (messages는 반드시 1개 대화만!)
+    answers = []
+    for inst in instructions:
+        messages = [
             {"role": "system", "content": "당신은 가상환자 역할을 수행하는 AI입니다."},
             {"role": "user", "content": f"{inst['prompt']}\n\n질문: {question_text}"}
         ]
-        for inst in instructions
-    ]
-
-    # OpenAI batch 호출 (최신 SDK 기준)
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages_list,
-            max_tokens=500
-        )
-        answers = [choice.message.content for choice in response.choices]
-    except Exception as e:
-        answers = [f"Error: {str(e)}"] * len(instructions)
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+                max_tokens=500
+            )
+            answer = response.choices[0].message.content
+        except Exception as e:
+            answer = f"Error: {str(e)}"
+        answers.append(answer)
 
     # 각 조합별 답변과 detail 정보 반환
     result = []
@@ -352,7 +381,8 @@ async def process_qa_one_question(data: dict = Body(...)):
     return {
         "message": "질문별 batch 답변 완료",
         "answers": result,
-        "question_text": question_text
+        "question_text": question_text,
+        "combination_count": len(instructions)
     }
 
 @app.post("/process_qa_batch")
@@ -390,8 +420,7 @@ async def process_qa_batch(data: dict = Body(...)):
             symptom = input_parts[3].strip() if len(input_parts) > 3 else ''
             d1 = t1["detail"]
             d2 = t2["detail"]
-            instructions.append(f"""
-            당신은 다음 조건을 가진 가상환자입니다. 이 역할을 완전히 수행해주세요.\n\n
+            virtual_prompt = f"""당신은 다음 조건을 가진 가상환자입니다. 이 역할을 완전히 수행해주세요.\n\n
             환자 정보:\n
             - 이름: {name}\n
             - 나이: {age}\n
@@ -399,18 +428,21 @@ async def process_qa_batch(data: dict = Body(...)):
             - 주소증(주 증상): {symptom}\n
             - TCI 성향:\n  
             - 기질(Temperament): \n    
-            - 자극추구: {d1['자극추구']}\n    
-            - 위험회피: {d1['위험회피']}\n    
-            - 자율성: {d1['자율성']}\n  
+            - 자극추구: {d1.get('자극추구','-')}\n    
+            - 위험회피: {d1.get('위험회피','-')}\n    
+            - 자율성: {d1.get('자율성','-')}\n    
+            - 사회적민감성: {d1.get('사회적민감성','-')}\n    
+            - 인내력: {d1.get('인내력','-')}\n  
             - 성격(Character): \n    
-            - 자율성: {d2['자율성']}\n    
-            - 연대감: {d2['연대감']}\n    
-            - 자기초월: {d2['자기초월']}\n\n
+            - 자율성: {d2.get('자율성','-')}\n    
+            - 연대감: {d2.get('연대감','-')}\n    
+            - 자기초월: {d2.get('자기초월','-')}\n\n
             역할 수행 지침\n1. 위 성향 수치를 고려하여 말투, 감정 표현, 행동 양식, 인지방식이 모두 해당 성향을 반영해야 합니다.\n
             2. 모든 응답은 1인칭 시점에서 자연스럽고 일관되게 작성되어야 하며, TCI 특성이 언어와 감정 표현에 스며들어야 합니다.\n
             3. 환자는 실제 인간처럼 사고하고 느끼며, 자신이 경험하는 증상과 감정을 솔직하게 묘사해야 합니다.\n
             4. 임상 상담, 진료 인터뷰, 정신과적 면담 등에서 활용 가능하도록 신뢰도 높은 시뮬레이션을 제공하세요.\n\n
-            이제 당신은 위 환자입니다. 질문에 응답하세요.""")
+            이제 당신은 위 환자입니다. 질문에 응답하세요."""
+            instructions.append(virtual_prompt)
             
     with NamedTemporaryFile("w+", delete=False, encoding="utf-8", suffix=".jsonl") as tmpfile:
         for prompt in instructions:
@@ -435,12 +467,15 @@ async def process_qa_batch(data: dict = Body(...)):
     )
 
     # 7. 결과 및 메타데이터 반환
+    request_count = len(instructions) * len(questions)
     return {
         "message": "Batch API 작업이 시작되었습니다.",
         "experiment_num": experiment_num,
         "batch_id": batch.id,
         "input_file_id": batch_input_file.id,
         "input_file_name": os.path.basename(tmpfile_path),
-        "request_count": len(instructions) * len(questions),
+        "request_count": request_count,
+        "combination_count": len(instructions),
+        "questions_count": len(questions),
         "openai_dashboard_url": "https://platform.openai.com/batch"
     }

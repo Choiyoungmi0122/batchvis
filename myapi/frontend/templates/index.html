@@ -272,22 +272,24 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ user_input: input })
                 });
-                const instructionData = await instructionRes.json();
-                
+                let instructionData;
+                if (instructionRes.ok && instructionRes.headers.get('content-type')?.includes('application/json')) {
+                    instructionData = await instructionRes.json();
+                } else {
+                    const text = await instructionRes.text();
+                    throw new Error('서버 오류: ' + text);
+                }
                 // 생성된 instruction들을 저장하고 첫 번째 페이지 표시
                 currentInstructions = instructionData.instructions || [];
                 currentPage = 0;
                 instructionsPerPage = 1;
-                
                 if (currentInstructions.length > 0) {
                     displayInstruction(currentPage);
                     showPagination();
                     loading.innerText = `Instruction 생성 완료! (${currentInstructions.length}개 조합)`;
-                    
                     // 2단계: 질문-답변 처리
                     setTimeout(async () => {
                         loading.innerText = '질문-답변 처리 중...';
-                        
                         const qaRes = await fetch('/process_qa', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -297,15 +299,18 @@
                                 user_input: input
                             })
                         });
-                        const qaData = await qaRes.json();
-                        
+                        let qaData;
+                        if (qaRes.ok && qaRes.headers.get('content-type')?.includes('application/json')) {
+                            qaData = await qaRes.json();
+                        } else {
+                            const text = await qaRes.text();
+                            throw new Error('서버 오류: ' + text);
+                        }
                         // 답변 데이터 저장
                         currentAnswers = qaData.prompts || [];
-                        
                         // 디버깅: 답변 데이터 확인
                         console.log('답변 데이터:', currentAnswers);
                         console.log('답변 개수:', currentAnswers.length);
-                        
                         // 첫 번째 페이지 다시 표시 (답변 포함)
                         displayInstruction(currentPage);
                         // 답변 생성 후 첫 질문에 대한 답변 자동 표시
@@ -313,10 +318,8 @@
                           document.getElementById('question').selectedIndex = 1;
                           displayResponsesByQuestion(0);
                         }
-                        
                         loading.innerText = `처리 완료! (${qaData.prompts_count}개 조합, ${qaData.questions_count}개 질문)`;
                         document.getElementById('result').innerText = `실험 완료! (${qaData.prompts_count}개 조합, ${qaData.questions_count}개 질문)`;
-                        
                         // 3초 후 로딩 메시지 숨기기
                         setTimeout(() => {
                             loading.style.display = 'none';
@@ -325,13 +328,11 @@
                 } else {
                     loading.innerText = 'Instruction 생성 실패';
                 }
-                
             } catch (error) {
                 document.getElementById('result').innerText = `오류 발생: ${error.message}`;
                 loading.innerText = '오류 발생';
             }
         }
-
         document.getElementById('inputText').value = '';
     }
 
@@ -370,12 +371,10 @@
         // 기존 response-box들 제거
         const existingResponses = mainPanel.querySelectorAll('.response-box');
         existingResponses.forEach(box => box.remove());
-
         // 질문 텍스트 가져오기
         const select = document.getElementById('question');
         const questionText = select.options[selectedQuestionIdx + 1]?.textContent;
         if (!questionText) return;
-
         // 답변 대기중 UI 미리 표시
         currentInstructions.forEach((inst, idx) => {
             let detailStr = '';
@@ -396,19 +395,29 @@
             `;
             mainPanel.appendChild(responseBox);
         });
-
         // 백엔드에 batch 요청
-        const res = await fetch('/process_qa_one_question', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                experiment_num: experimentNum,
-                instructions: currentInstructions,
-                user_input: currentInput,
-                question_text: questionText
-            })
-        });
-        const data = await res.json();
+        let data;
+        try {
+            const res = await fetch('/process_qa_one_question', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    experiment_num: experimentNum,
+                    instructions: currentInstructions,
+                    user_input: currentInput,
+                    question_text: questionText
+                })
+            });
+            if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+                data = await res.json();
+            } else {
+                const text = await res.text();
+                throw new Error('서버 오류: ' + text);
+            }
+        } catch (err) {
+            document.getElementById('result').innerText = `오류 발생: ${err.message}`;
+            return;
+        }
         // 답변 오면 UI 갱신
         const boxes = mainPanel.querySelectorAll('.response-box');
         data.answers.forEach((ans, idx) => {
