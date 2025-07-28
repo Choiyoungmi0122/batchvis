@@ -2,4 +2,6 @@
 BatchVis
 개발환경: python 3.10, fastapi
 
-해야할것
+실행 방법
+frontend - npm run dev
+backend - uvicorn main:app --reload

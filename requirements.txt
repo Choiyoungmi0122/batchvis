@@ -1,0 +1,5 @@
+fastapi==0.116.1
+openai==1.97.1
+python-dotenv==1.1.1
+pytz==2025.2
+starlette==0.47.2
